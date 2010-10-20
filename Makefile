@@ -64,6 +64,7 @@ $(ARDUINO)/Tone.cpp \
 $(ARDUINO)/WMath.cpp \
 $(ARDUINO)/Print.cpp \
 $(ARDUINO)/HardwareSerial.cpp \
+MAX6675.cpp \
 # end of CXX_MODULES
 
 CXX_APP = $(TARGET).cpp
@@ -211,7 +212,6 @@ core.a: $(OBJ_MODULES)
 
 # Compile: create object files from C++ source files.
 .cpp.o:
-	echo $<
 	$(CXX) -c $(ALL_CXXFLAGS) $< -o $@
 
 # Compile: create object files from C source files.
