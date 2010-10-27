@@ -1,4 +1,5 @@
 #include <WProgram.h>
+#include <util/delay.h>
 #include "MAX6675.h"
 #include "PID.h"
 #include "MLCScript.h"
@@ -21,6 +22,13 @@
 #define MAX_TEMPERATURE 80.0f
 #define MIN_TEMPERATURE 30.0f
 #define MAX_MASHING_TEMPERATURE 74.0f
+#define PUMP_TIMEOUT 5000
+
+// PID constants
+#define PID_OUTPUT_LIMIT 1000
+#define P_GAIN 1.0f
+#define I_GAIN 1.0f
+#define D_GAIN 0.0f
 
 typedef enum ProgramState {
     kProgramState_WaitingForInput = 0,
@@ -130,22 +138,84 @@ void readMLCScript(void) {
         writeSuccess();
     else
         return writeFailure();
+
+    Serial.print("RUN");
+}
+
+void runPumpBasedOnBobberPosition(uint8_t bobber, uint32_t elapsedMillis) {
+    static uint8_t pumpState = LOW;
+    static int16_t pumpTimeout = 0;
+
+    uint8_t previousPumpState = pumpState;
+
+    if (pumpTimeout > 0)
+        pumpTimeout -= elapsedMillis;
+
+    pumpState = digitalRead(BOBBER_MASHING);
+
+    if (pumpState == HIGH && pumpTimeout <= 0)
+        digitalWrite(RELAY_120V, HIGH);
+    else { 
+        digitalWrite(RELAY_120V, LOW);
+        if (pumpState == LOW && previousPumpState == HIGH) // set the pumpTimeout at the transition
+            pumpTimeout = PUMP_TIMEOUT;                    // from HIGH to LOW
+    }
+}
+
+void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis) {
+    if (dutyCycleMillis > 0 && dutyCycleMillis <= 1000) {
+        digitalWrite(RELAY_240V, HIGH);
+        _delay_ms(dutyCycleMillis);
+
+        digitalWrite(RELAY_240V, LOW);
+        _delay_ms(1000 - dutyCycleMillis);
+    }
+    else
+        digitalWrite(RELAY_240V, LOW);
+}
+
+float dutyCycleBasedOnPIDControl(MAX6675& thermocouple, uint32_t elapsedMillis) {
+    static PID pid;
+    static float temperatureSetpoint = 0.0f;
+    
+    float previousTemperatureSetpoint = temperatureSetpoint;
+
+    temperatureSetpoint = currentScript.currentTemperatureSetpoint();
+    if (previousTemperatureSetpoint != temperatureSetpoint) {
+        PID newPID(temperatureSetpoint, P_GAIN, I_GAIN, D_GAIN, PID_OUTPUT_LIMIT);
+        pid = newPID;
+    }
+
+    return pid.nextControlOutput(thermocouple.readCelsius(), elapsedMillis);
 }
 
 int main() {
     setup();
 
-    double lastTime = millis(),
-           currentTime = 0.0,
-           elapsedTime = 0.0;
+    uint32_t lastTime              = millis(),
+             currentTime           = 0,
+             elapsedMillis         = 0,
+             heaterDutyCycleMillis = 0;
+
+    float hotLiquorTemperature;
 
     while (1) {
         currentTime = millis();
-        elapsedTime = lastTime - currentTime;
+        elapsedMillis = lastTime - currentTime;
+
+        // run the script for elapsedMillis seconds
+        currentScript.step(elapsedMillis);
+
+        // end mashing/sparging if the currentScript has completed
+        if (currentScript.completed()) {
+            currentState = kProgramState_WaitingForInput;
+            Serial.print("END");
+        }
 
         switch (currentState) {
             case kProgramState_WaitingForInput:
                 readMLCScript();
+                currentTime = millis(); // don't include time to read script in time steps
                 break;
             case kProgramState_Mashing:
                 // Thermocouples:
@@ -158,6 +228,14 @@ int main() {
                 //   The bobber in the grant (BOBBER_MASHING) turns the
                 //   pump on or off, with some hysteresis.
 
+                heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(thermocouple2, elapsedMillis);
+                hotLiquorTemperature = thermocouple1.readCelsius();
+                if (hotLiquorTemperature > MAX_MASHING_TEMPERATURE              // turn off heater if wort temp is
+                    || MAX_MASHING_TEMPERATURE - hotLiquorTemperature < 1.0f)  // above max or within 1 degree
+                    heaterDutyCycleMillis = 0;
+
+                runPumpBasedOnBobberPosition(BOBBER_MASHING, elapsedMillis);
+                runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
                 break;
             case kProgramState_Sparging:
                 // Thermocouples:
@@ -168,6 +246,9 @@ int main() {
                 //   The bobber in the mash tun (BOBBER_SPARGING) turns the
                 //   pump on or off, with some hysteresis.
 
+                heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(thermocouple1, elapsedMillis);
+                runPumpBasedOnBobberPosition(BOBBER_SPARGING, elapsedMillis);
+                runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
                 break;
             default: // make the compiler happy
                 break;

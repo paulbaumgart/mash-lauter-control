@@ -5,8 +5,9 @@
 
 class PID {
     public:
-        PID (float setpoint, float pGain, float iGain, float dGain, float outputLimit); 
-        float nextControlOutput (float inputValue, float timeElapsed);
+        PID();
+        PID(float setpoint, float pGain, float iGain, float dGain, float outputLimit);
+        float nextControlOutput(float inputValue, uint32_t elapsedMillis);
 
     private:
         float setpoint,
