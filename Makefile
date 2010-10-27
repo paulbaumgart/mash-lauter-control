@@ -65,6 +65,8 @@ $(ARDUINO)/WMath.cpp \
 $(ARDUINO)/Print.cpp \
 $(ARDUINO)/HardwareSerial.cpp \
 MAX6675.cpp \
+PID.cpp \
+MLCScript.cpp \
 # end of CXX_MODULES
 
 CXX_APP = $(TARGET).cpp
@@ -240,7 +242,7 @@ core.a: $(OBJ_MODULES)
 # Target: clean project.
 clean:
 	$(REMOVE) $(TARGET).hex $(TARGET).eep $(TARGET).cof $(TARGET).elf \
-	$(TARGET).map $(TARGET).sym $(TARGET).lss core.a $(TARGET).o 
+	$(TARGET).map $(TARGET).sym $(TARGET).lss core.a *.o 
 
 .PHONY:	all build elf hex eep lss sym program coff extcoff clean sizebefore sizeafter
 

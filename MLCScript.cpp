@@ -1,13 +1,18 @@
 #include "MLCScript.h"
 
-MLCScript::MLCScript(MLCMode aMode) {
-	mode = aMode;	
-	counter = numSetpoints = activeSetpointIndex = 0;
-	maxIndex = -1;
+MLCScript::MLCScript() {
+    this->reset();
 }
 
-MLCMode MLCScript::getMode() {
-	return mode;
+bool MLCScript::completed() {
+    // if it hass stepped at least once and the activeSetpointIndex
+    // has been set to -1, the script is completed
+    return counter > 0 && activeSetpointIndex == -1;
+}
+
+void MLCScript::reset() {
+	counter = numSetpoints = activeSetpointIndex = 0;
+	maxIndex = -1;
 }
 
 void MLCScript::addSetpoint(float temperature, uint32_t durationMillis) {
@@ -40,3 +45,4 @@ float MLCScript::currentTemperatureSetpoint(void) {
 	else
 		return NAN;
 }
+

@@ -1,17 +1,22 @@
 #ifndef _PID_H_
 #define _PID_H_
 
-typedef struct PID {
-    double setpoint;
+#include <WProgram.h>
 
-    double previous_error,
-           integral,
-           derivative;
+class PID {
+    public:
+        PID (float setpoint, float pGain, float iGain, float dGain, float outputLimit); 
+        float nextControlOutput (float inputValue, float timeElapsed);
 
-    double p_weight,
-           i_weight,
-           d_weight;
-} PID;
+    private:
+        float setpoint,
+              previousError,
+              integral,
+              pGain,
+              iGain,
+              dGain,
+              outputLimit;
+};
 
 #endif
 
