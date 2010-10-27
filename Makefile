@@ -98,7 +98,7 @@ CSTANDARD = -std=gnu99
 CDEBUG = -g$(DEBUG)
 CWARN = -Wall -pedantic -Wno-variadic-macros
 CTUNING = -ffunction-sections -fdata-sections
-CXXTUNING = -fno-exceptions -ffunction-sections -fdata-sections
+CXXTUNING = -fno-exceptions -ffunction-sections -fdata-sections -fno-threadsafe-statics 
 
 CFLAGS = $(CDEBUG) -O$(OPT) $(CWARN) $(CTUNING) $(CDEFS) $(CINCS) $(CSTANDARD) $(CEXTRA)
 CXXFLAGS = $(CDEBUG) -O$(OPT) $(CWARN) $(CXXTUNING) $(CDEFS) $(CINCS)
