@@ -66,39 +66,49 @@ void setup(void) {
 
     // apparently the thermocouples need a while to stabilize
     delay(500);
+
+    Serial.println("PROGRAM RUNNING");
 }
 
-void readNextFourBytes(InputBuffer *inputBuf) {
-    uint8_t i;
+void readNextNullTerminatedString(InputBuffer& inputBuf) {
+    const uint8_t bytesToRead = sizeof(inputBuf) - 1;
+    while (Serial.available() < bytesToRead);
 
-    // this should probably time out or something
-    while (Serial.available() < sizeof(*inputBuf));
+    for (uint8_t i = 0; i < bytesToRead; ++i)
+        inputBuf.stringVal[i] = Serial.read();
 
-    for (i = 0; i < sizeof(*inputBuf); ++i)
-        inputBuf->stringVal[i] = Serial.read();
+    inputBuf.stringVal[bytesToRead] = '\0';
+}
+
+void readNextFourBytes(InputBuffer& inputBuf) {
+    while (Serial.available() < sizeof(inputBuf));
+
+    for (uint8_t i = 0; i < sizeof(inputBuf); ++i)
+        inputBuf.stringVal[i] = Serial.read();
 }
 
 void writeSuccess(void) {
-    Serial.print("OK!");
+    Serial.println("OK");
 }
 
 void writeFailure(void) {
     currentState = kProgramState_WaitingForInput;
-    Serial.print("ERR");
+    Serial.println("ERROR");
+    Serial.flush();
 }
 
 void readMLCScript(void) {
     InputBuffer inputData;
 
     // ok, let's make sure we're on the same page here...
-    readNextFourBytes(&inputData);
+    readNextNullTerminatedString(inputData);
     if (strcmp (inputData.stringVal, "BEG") == 0)
         writeSuccess();
     else
         return writeFailure();
 
     // mode: mashing or sparging?
-    readNextFourBytes(&inputData);
+    readNextNullTerminatedString(inputData);
     if (strcmp (inputData.stringVal, "MSH") == 0) { // mashing
         currentState = kProgramState_Mashing;
         writeSuccess();
@@ -113,18 +123,22 @@ void readMLCScript(void) {
     currentScript.reset();
 
     // number of (temperature, duration) pairs to expect
-    readNextFourBytes(&inputData);
+    readNextFourBytes(inputData);
     uint32_t scriptLength = inputData.intVal;
+    if (scriptLength <= NUM_SETPOINTS) 
+        writeSuccess();
+    else
+        return writeFailure();
 
     for (uint8_t i = 0; i < scriptLength; ++i) {
-        readNextFourBytes(&inputData);
+        readNextFourBytes(inputData);
         float temperature = inputData.floatVal;
         if (temperature <= MAX_TEMPERATURE && temperature >= MIN_TEMPERATURE)
             writeSuccess();
         else
             return writeFailure();
 
-        readNextFourBytes(&inputData);
+        readNextFourBytes(inputData);
         uint32_t durationMillis = inputData.intVal;
         // not really any bounds checking we can do on durationMillis...
         writeSuccess();
@@ -133,13 +147,13 @@ void readMLCScript(void) {
     }
 
     // make sure everything is synced up still 
-    readNextFourBytes(&inputData);
+    readNextNullTerminatedString(inputData);
     if (strcmp (inputData.stringVal, "END") == 0)
         writeSuccess();
     else
         return writeFailure();
 
-    Serial.print("RUN");
+    Serial.println("RUNNING SCRIPT");
 }
 
 void runPumpBasedOnBobberPosition(uint8_t bobber, uint32_t elapsedMillis) {
@@ -209,7 +223,7 @@ int main() {
         // end mashing/sparging if the currentScript has completed
         if (currentScript.completed()) {
             currentState = kProgramState_WaitingForInput;
-            Serial.print("END");
+            Serial.println("END OF SCRIPT");
         }
 
         switch (currentState) {
