@@ -5,9 +5,7 @@ MLCScript::MLCScript() {
 }
 
 bool MLCScript::completed() {
-    // if it hass stepped at least once and the activeSetpointIndex
-    // has been set to -1, the script is completed
-    return counter > 0 && activeSetpointIndex == -1;
+    return activeSetpointIndex == -1;
 }
 
 void MLCScript::reset() {
@@ -44,5 +42,16 @@ float MLCScript::currentTemperatureSetpoint(void) {
 		return setpoints[activeSetpointIndex];
 	else
 		return NAN;
+}
+
+uint32_t MLCScript::timeInCurrentInterval(void) {
+    return counter;
+}
+
+uint32_t MLCScript::currentIntervalDuration(void) {
+    if (activeSetpointIndex >= 0)
+        return setpointDurations[activeSetpointIndex];
+    else
+        return 0;
 }
 

@@ -156,6 +156,16 @@ void readMLCScript(void) {
     Serial.println("RUNNING SCRIPT");
 }
 
+void outputStatus(MAX6675& thermocouple) {
+    Serial.print(currentScript.timeInCurrentInterval());
+    Serial.print(',');
+    Serial.print(currentScript.currentIntervalDuration());
+    Serial.print(',');
+    Serial.print(thermocouple.readCelsius());
+    Serial.print(',');
+    Serial.println(currentScript.currentTemperatureSetpoint());
+}
+
 void runPumpBasedOnBobberPosition(uint8_t bobber, uint32_t elapsedMillis) {
     static uint8_t pumpState = LOW;
     static int16_t pumpTimeout = 0;
@@ -177,15 +187,21 @@ void runPumpBasedOnBobberPosition(uint8_t bobber, uint32_t elapsedMillis) {
 }
 
 void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis) {
-    if (dutyCycleMillis > 0 && dutyCycleMillis <= 1000) {
-        digitalWrite(RELAY_240V, HIGH);
-        _delay_ms(dutyCycleMillis);
+    if (dutyCycleMillis <= 1000) {
+        if (dutyCycleMillis > 0) {
+            digitalWrite(RELAY_240V, HIGH);
+            _delay_ms(dutyCycleMillis);
+        }
 
         digitalWrite(RELAY_240V, LOW);
         _delay_ms(1000 - dutyCycleMillis);
     }
-    else
+    else {
+        Serial.print("ERROR: ");
+        Serial.print(dutyCycleMillis);
+        Serial.println(" out of range [0, 1000]");
         digitalWrite(RELAY_240V, LOW);
+    }
 }
 
 float dutyCycleBasedOnPIDControl(MAX6675& thermocouple, uint32_t elapsedMillis) {
@@ -215,15 +231,17 @@ int main() {
 
     while (1) {
         currentTime = millis();
-        elapsedMillis = lastTime - currentTime;
+        elapsedMillis = currentTime - lastTime;
 
-        // run the script for elapsedMillis seconds
-        currentScript.step(elapsedMillis);
+        if (currentState != kProgramState_WaitingForInput) {
+            // run the script for elapsedMillis seconds
+            currentScript.step(elapsedMillis);
 
-        // end mashing/sparging if the currentScript has completed
-        if (currentScript.completed()) {
-            currentState = kProgramState_WaitingForInput;
-            Serial.println("END OF SCRIPT");
+            // end mashing/sparging if the currentScript has completed
+            if (currentScript.completed()) {
+                currentState = kProgramState_WaitingForInput;
+                Serial.println("END OF SCRIPT");
+            }
         }
 
         switch (currentState) {
@@ -248,6 +266,7 @@ int main() {
                     || MAX_MASHING_TEMPERATURE - hotLiquorTemperature < 1.0f)  // above max or within 1 degree
                     heaterDutyCycleMillis = 0;
 
+                outputStatus(thermocouple2);
                 runPumpBasedOnBobberPosition(BOBBER_MASHING, elapsedMillis);
                 runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
                 break;
@@ -261,6 +280,7 @@ int main() {
                 //   pump on or off, with some hysteresis.
 
                 heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(thermocouple1, elapsedMillis);
+                outputStatus(thermocouple1);
                 runPumpBasedOnBobberPosition(BOBBER_SPARGING, elapsedMillis);
                 runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
                 break;

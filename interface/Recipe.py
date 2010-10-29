@@ -16,40 +16,48 @@ class Recipe(object):
         self.temp_duration_pairs = list()
 
     def add_line(self, line):
-        parts = map(lambda x: x.strip().strip(':').lower(), line.split(','))
+        parts = map(lambda x: x.strip().strip(':'), line.lower().split(','))
+        raw_parts = line.split(',')
         try:
             temp, temp_scale = parts[0].split()
         except ValueError:
-            raise RecipeSyntaxError(parts[0], "Expected: 2 values separated by a space: <temperature> <scale>. Got: " + str(len(parts[0].split())) + " value(s).")
+            raise RecipeSyntaxError(raw_parts[0],
+                    "Expected: 2 values separated by a space: <temperature> <scale>. Got: " \
+                        + str(len(parts[0].split())) + " value(s).")
         try:
             time, time_units = parts[1].split()
         except ValueError:
-            raise RecipeSyntaxError(parts[1], "Expected: 2 values separated by a space: <time> <units>. Got: " + str(len(parts[1].split())) + " value(s).")
+            raise RecipeSyntaxError(raw_parts[1],
+                    "Expected: 2 values separated by a space: <time> <units>. Got: " \
+                        + str(len(parts[1].split())) + " value(s).")
+
         try:
             temp = int(temp)
         except ValueError:
-            raise RecipeSyntaxError(temp, "Can't parse temperature value.")
+            raise RecipeSyntaxError(raw_parts[0], "Can't parse temperature value.")
 
-        if temp_scale[0].lower() == 'f':
+        if temp_scale[0] == 'f':
             temp = (temp - 32) * 5 / 9
-        elif temp_scale[0].lower() != 'c':
-            raise RecipeSyntaxError(temp_scale, "Can't parse temperature scale (expected: 'C' or 'F').")
+        elif temp_scale[0] != 'c':
+            raise RecipeSyntaxError(raw_parts[0],
+                      "Can't parse temperature scale (expected: 'C' or 'F').")
 
         try:
             time = int(time)
         except ValueError:
-            raise RecipeSyntaxError(time, "Can't parse time value.")
+            raise RecipeSyntaxError(raw_parts[1], "Can't parse time value.")
 
-        if time_units[:2].lower() == 'ms' or time_units[:3].lower() == 'mil': # milliseconds
+        if time_units[:2] == 'ms' or time_units[:3] == 'mil': # milliseconds
             pass
-        elif time_units[:1].lower() == 's': # seconds
+        elif time_units[:1] == 's': # seconds
             time = time * 1000
-        elif time_units[:1].lower() == 'm': # minutes
+        elif time_units[:1] == 'm': # minutes
             time = time * 1000 * 60
-        elif time_units[:1].lower() == 'h': # hours
+        elif time_units[:1] == 'h': # hours
             time = time * 1000 * 60 * 60
         else:
-            raise RecipeSyntaxError(time_units, "Can't parse time units (expected: 'h', 'm', 's', or 'ms').")
+            raise RecipeSyntaxError(raw_parts[1],
+                      "Can't parse time units (expected: 'h', 'm', 's', or 'ms').")
 
         self.temp_duration_pairs.append((temp, time))
 

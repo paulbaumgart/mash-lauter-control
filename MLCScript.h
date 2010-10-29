@@ -13,6 +13,8 @@ class MLCScript {
 		void addSetpoint(float temperature, uint32_t durationMillis);
 		void step(uint32_t elapsedMillis);
 		float currentTemperatureSetpoint(void);
+        uint32_t timeInCurrentInterval(void);
+        uint32_t currentIntervalDuration(void);
 
 	private:
 		uint32_t counter,
