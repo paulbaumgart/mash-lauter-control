@@ -3,6 +3,7 @@
 #include "MAX6675.h"
 #include "PID.h"
 #include "MLCScript.h"
+#include "Util.h"
 
 // pin aliases
 #define THERMO_CS1  2
@@ -12,23 +13,30 @@
 #define THERMO_DO2  6
 #define THERMO_CLK2 7
 
-#define BOBBER_MASHING  8
-#define BOBBER_SPARGING 9
+#define BOBBER_SPARGING 8
+#define BOBBER_MASHING  9
 
-#define RELAY_240V 10
-#define RELAY_120V 11
+#define STIR_PLATE 10
+
+#define RELAY_240V 11
+#define RELAY_120V 12
 
 // misc constants
 #define MAX_TEMPERATURE 80.0f
-#define MIN_TEMPERATURE 30.0f
+#define MIN_TEMPERATURE 25.0f
 #define MAX_MASHING_TEMPERATURE 74.0f
-#define PUMP_TIMEOUT 5000
+#define PUMP_TIMEOUT 10000
+#define STIR_PLATE_PWM 30
+#define STIR_PLATE_WAIT_MS 2000
 
 // PID constants
 #define PID_OUTPUT_LIMIT 1000
-#define P_GAIN 1.0f
-#define I_GAIN 1.0f
+#define P_GAIN 250.0f
+#define I_GAIN 0.0f
 #define D_GAIN 0.0f
+
+#define ON true
+#define OFF false
 
 typedef enum ProgramState {
     kProgramState_WaitingForInput = 0,
@@ -50,6 +58,7 @@ static MAX6675 thermocouple2(THERMO_CLK2, THERMO_CS2, THERMO_DO2);
 
 static MLCScript currentScript;
 
+static int8_t pumpState;
 
 void setup(void) {
     // arduino function that sets up the arduino-specific things
@@ -122,6 +131,17 @@ void readMLCScript(void) {
 
     currentScript.reset();
 
+	// mash water volume
+	readNextFourBytes(inputData);
+	uint32_t mashWaterVolume = inputData.intVal;
+	if (mashWaterVolume >= 0.0f) {
+		currentScript.setMashWaterVolume(mashWaterVolume);
+		writeSuccess();
+	}
+	else
+		return writeFailure();
+
+
     // number of (temperature, duration) pairs to expect
     readNextFourBytes(inputData);
     uint32_t scriptLength = inputData.intVal;
@@ -156,34 +176,46 @@ void readMLCScript(void) {
     Serial.println("RUNNING SCRIPT");
 }
 
-void outputStatus(MAX6675& thermocouple) {
+void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCycleMillis) {
+    Serial.print(currentState == kProgramState_Mashing ? "MASHING" : "SPARGING");
+    Serial.print(',');
     Serial.print(currentScript.timeInCurrentInterval());
     Serial.print(',');
     Serial.print(currentScript.currentIntervalDuration());
     Serial.print(',');
-    Serial.print(thermocouple.readCelsius());
+    Serial.print(temperature1);
     Serial.print(',');
-    Serial.println(currentScript.currentTemperatureSetpoint());
+    Serial.print(temperature2);
+    Serial.print(',');
+    Serial.print(currentScript.currentTemperatureSetpoint());
+    Serial.print(',');
+    Serial.print(heaterDutyCycleMillis);
+    Serial.print(',');
+    Serial.print(pumpState == HIGH ? "ON" : "OFF");
+    Serial.println("");
 }
 
-void runPumpBasedOnBobberPosition(uint8_t bobber, uint32_t elapsedMillis) {
-    static uint8_t pumpState = LOW;
+void runPumpBasedOnMashingBobberPosition(uint32_t elapsedMillis) {
     static int16_t pumpTimeout = 0;
+    int8_t bobberState = digitalRead(BOBBER_MASHING);
 
-    uint8_t previousPumpState = pumpState;
+    pumpState = HIGH;
 
-    if (pumpTimeout > 0)
-        pumpTimeout -= elapsedMillis;
-
-    pumpState = digitalRead(BOBBER_MASHING);
-
-    if (pumpState == HIGH && pumpTimeout <= 0)
-        digitalWrite(RELAY_120V, HIGH);
-    else { 
-        digitalWrite(RELAY_120V, LOW);
-        if (pumpState == LOW && previousPumpState == HIGH) // set the pumpTimeout at the transition
-            pumpTimeout = PUMP_TIMEOUT;                    // from HIGH to LOW
+    if (bobberState == HIGH) { // bobber signal HIGH means water level is low
+        if (pumpTimeout > 0)
+            pumpTimeout -= elapsedMillis;
+        else
+            pumpState = LOW;
     }
+    else
+        pumpTimeout = PUMP_TIMEOUT;
+
+    digitalWrite(RELAY_120V, pumpState);
+}
+
+void runPumpBasedOnSpargingBobberPosition(uint32_t elapsedMillis) {
+    int8_t bobberState = digitalRead(BOBBER_SPARGING);
+    digitalWrite(RELAY_120V, bobberState);
 }
 
 void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis) {
@@ -196,27 +228,36 @@ void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis) {
         digitalWrite(RELAY_240V, LOW);
         _delay_ms(1000 - dutyCycleMillis);
     }
-    else {
-        Serial.print("ERROR: ");
-        Serial.print(dutyCycleMillis);
-        Serial.println(" out of range [0, 1000]");
-        digitalWrite(RELAY_240V, LOW);
-    }
+    else
+		writeFailure();
 }
 
-float dutyCycleBasedOnPIDControl(MAX6675& thermocouple, uint32_t elapsedMillis) {
+float dutyCycleBasedOnPIDControl(float currentTemperature, uint32_t elapsedMillis) {
     static PID pid;
     static float temperatureSetpoint = 0.0f;
     
     float previousTemperatureSetpoint = temperatureSetpoint;
 
     temperatureSetpoint = currentScript.currentTemperatureSetpoint();
+	if (ISNAN(temperatureSetpoint)) {
+		writeFailure();
+		return 0.0f;
+	}
+	
     if (previousTemperatureSetpoint != temperatureSetpoint) {
         PID newPID(temperatureSetpoint, P_GAIN, I_GAIN, D_GAIN, PID_OUTPUT_LIMIT);
         pid = newPID;
     }
 
-    return pid.nextControlOutput(thermocouple.readCelsius(), elapsedMillis);
+    return pid.nextControlOutput(currentTemperature, elapsedMillis);
+}
+
+void readTemperaturesFromThermocouples(float* temp1Pointer, float* temp2Pointer) {
+	analogWrite(STIR_PLATE, 0);
+	_delay_ms(STIR_PLATE_WAIT_MS);
+	*temp1Pointer = thermocouple1.readCelsius();
+	*temp2Pointer = thermocouple2.readCelsius();
+	analogWrite(STIR_PLATE, STIR_PLATE_PWM);
 }
 
 int main() {
@@ -227,66 +268,68 @@ int main() {
              elapsedMillis         = 0,
              heaterDutyCycleMillis = 0;
 
-    float hotLiquorTemperature;
+    float temperature1       = 0.0f,
+		  temperature2       = 0.0f,
+		  currentTemperature = 0.0f;
 
     while (1) {
         currentTime = millis();
         elapsedMillis = currentTime - lastTime;
 
-        if (currentState != kProgramState_WaitingForInput) {
-            // run the script for elapsedMillis seconds
-            currentScript.step(elapsedMillis);
+		// MASHING
+		// =======
+		// Thermocouples:
+		//   The thermocouple in the grain bed
+		//   (thermocouple2) is used as the input for PID control,
+		//   and the thermocouple in the HLT (thermocouple1) is just
+		//   used to ensure the wort does not exceed the
+		//   MAX_MASHING_TEMPERATURE.
+		// Bobbers:
+		//   The bobber in the grant (BOBBER_MASHING) turns the
+		//   pump on or off, with some hysteresis.
+		//   
+		// SPARGING
+		// ========
+		// Thermocouples:
+		//   The thermocouple in the HLT (thermocouple1) is the only
+		//   one relevant for the sparging process. It is used as the
+		//   input for PID control.
+		// Bobbers:
+		//   The bobber in the mash tun (BOBBER_SPARGING) turns the
+		//   pump on or off, with some hysteresis.
+        if (currentState == kProgramState_Mashing || currentState == kProgramState_Sparging) {
 
             // end mashing/sparging if the currentScript has completed
             if (currentScript.completed()) {
                 currentState = kProgramState_WaitingForInput;
                 Serial.println("END OF SCRIPT");
             }
-        }
+			else { // run the control system
+				readTemperaturesFromThermocouples(&temperature1, &temperature2);
 
-        switch (currentState) {
-            case kProgramState_WaitingForInput:
-                readMLCScript();
-                currentTime = millis(); // don't include time to read script in time steps
-                break;
-            case kProgramState_Mashing:
-                // Thermocouples:
-                //   The thermocouple in the grain bed
-                //   (thermocouple2) is used as the input for PID control,
-                //   and the thermocouple in the HLT (thermocouple1) is just
-                //   used to ensure the wort does not exceed the
-                //   MAX_MASHING_TEMPERATURE.
-                // Bobbers:
-                //   The bobber in the grant (BOBBER_MASHING) turns the
-                //   pump on or off, with some hysteresis.
+				if (currentState == kProgramState_Mashing) {
+					currentTemperature = temperature2;
+					if (temperature1 >= MAX_MASHING_TEMPERATURE)
+						heaterDutyCycleMillis = 0;
+					else
+						heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(currentTemperature, elapsedMillis);
+				}
+				else {
+					currentTemperature = temperature1;
+					heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(currentTemperature, elapsedMillis);
+				}
+				currentScript.step(elapsedMillis, currentTemperature);
+	
+				outputStatus(temperature1, temperature2, heaterDutyCycleMillis);
 
-                heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(thermocouple2, elapsedMillis);
-                hotLiquorTemperature = thermocouple1.readCelsius();
-                if (hotLiquorTemperature > MAX_MASHING_TEMPERATURE              // turn off heater if wort temp is
-                    || MAX_MASHING_TEMPERATURE - hotLiquorTemperature < 1.0f)  // above max or within 1 degree
-                    heaterDutyCycleMillis = 0;
-
-                outputStatus(thermocouple2);
-                runPumpBasedOnBobberPosition(BOBBER_MASHING, elapsedMillis);
-                runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
-                break;
-            case kProgramState_Sparging:
-                // Thermocouples:
-                //   The thermocouple in the HLT (thermocouple1) is the only
-                //   one relevant for the sparging process. It is used as the
-                //   input for PID control.
-                // Bobbers:
-                //   The bobber in the mash tun (BOBBER_SPARGING) turns the
-                //   pump on or off, with some hysteresis.
-
-                heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(thermocouple1, elapsedMillis);
-                outputStatus(thermocouple1);
-                runPumpBasedOnBobberPosition(BOBBER_SPARGING, elapsedMillis);
-                runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
-                break;
-            default: // make the compiler happy
-                break;
-        }
+				runPumpBasedOnMashingBobberPosition(elapsedMillis);
+				runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
+			}
+		}
+		else if (currentState == kProgramState_WaitingForInput) {
+			readMLCScript();
+			currentTime = millis(); // don't include time to read script in time steps
+		}
 
         lastTime = currentTime;        
     }

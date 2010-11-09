@@ -33,7 +33,11 @@ float PID::nextControlOutput(float inputValue, uint32_t elapsedMillis) {
 
     previousError = error;
 
-    output = pGain * proportional + iGain * integral + dGain * derivative;
+	if (inputValue >= setpoint)
+		output = 0;
+	else
+		output = pGain * proportional + iGain * integral + dGain * derivative;
+
     if (output > outputLimit)
         output = outputLimit;
     else if (output < 0)

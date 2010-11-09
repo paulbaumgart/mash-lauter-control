@@ -20,7 +20,9 @@ class SerialCommunicator(object):
         except:
             raise Exception("Can't open USB serial connection. Is the microcontroller connected?")
 
-        self.serial = serial.Serial('/dev/' + device, 9600, timeout=2)
+        self.serial = serial.Serial('/dev/' + device, 9600, timeout=10)
+        self.serial.flushInput()
+        self.serial.flushOutput()
         self.ensure_next_output_line_is('PROGRAM RUNNING')
 
     def write_recipe(self, recipe):

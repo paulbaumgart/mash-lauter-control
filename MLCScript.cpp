@@ -1,7 +1,9 @@
 #include "MLCScript.h"
+#include "Util.h"
+#define ASSUMED_HLT_VOLUME_ML 35000.0f
 
 MLCScript::MLCScript() {
-    this->reset();
+    reset();
 }
 
 bool MLCScript::completed() {
@@ -9,8 +11,10 @@ bool MLCScript::completed() {
 }
 
 void MLCScript::reset() {
-	counter = numSetpoints = activeSetpointIndex = 0;
+	counter = numSetpoints = activeSetpointIndex = mashWaterVolume = 0;
 	maxIndex = -1;
+	initialRampUpTemperature = NAN;
+	initialRampUpCompleted = false;
 }
 
 void MLCScript::addSetpoint(float temperature, uint32_t durationMillis) {
@@ -22,7 +26,33 @@ void MLCScript::addSetpoint(float temperature, uint32_t durationMillis) {
 	}
 }
 
-void MLCScript::step(uint32_t elapsedMillis) {
+void MLCScript::setMashWaterVolume(uint32_t mashWaterMilliLiters) {
+	mashWaterVolume = mashWaterMilliLiters;
+}
+
+void MLCScript::setMashWaterTemperature(float mashWaterCelsius) {
+	mashWaterTemperature = mashWaterCelsius;
+}
+
+bool MLCScript::inInitialRampUp(void) {
+	return !initialRampUpCompleted && mashWaterVolume > 0 && !ISNAN(initialRampUpTemperature);
+}
+
+void MLCScript::step(uint32_t elapsedMillis, float currentTemperature) {
+	if (!initialRampUpCompleted && mashWaterVolume > 0) {
+		if (ISNAN(initialRampUpTemperature)) {
+			float setpoint = setpoints[activeSetpointIndex];
+			initialRampUpTemperature = setpoint +
+									   (mashWaterVolume / ASSUMED_HLT_VOLUME_ML *
+									   	   (setpoint - mashWaterTemperature));
+		}
+
+		if (currentTemperature >= initialRampUpTemperature)
+			initialRampUpCompleted = true;
+		else
+			return;
+	}
+	
 	if (maxIndex >= 0 && activeSetpointIndex >= 0) {
 		counter += elapsedMillis;
 
@@ -38,7 +68,9 @@ void MLCScript::step(uint32_t elapsedMillis) {
 }
 
 float MLCScript::currentTemperatureSetpoint(void) {
-	if (activeSetpointIndex >= 0)
+	if (!initialRampUpCompleted)
+		return initialRampUpTemperature;
+	else if (activeSetpointIndex >= 0)
 		return setpoints[activeSetpointIndex];
 	else
 		return NAN;
