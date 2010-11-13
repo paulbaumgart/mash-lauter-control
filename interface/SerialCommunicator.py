@@ -35,7 +35,11 @@ class SerialCommunicator(object):
         self.ensure_next_output_line_is('RUNNING SCRIPT')
 
     def read_current_status(self):
-       return self.serial.readline().strip() 
+       current_status = self.serial.readline().strip()
+       if current_status == 'ADD GRAINS':
+           raw_input('Add grains and press Enter to continue.')
+       else:
+           return current_status            
 
     def ensure_next_output_line_is(self, expected, command=None):
         output = self.serial.readline().strip()

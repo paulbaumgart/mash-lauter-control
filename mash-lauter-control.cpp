@@ -18,25 +18,22 @@
 
 #define STIR_PLATE 10
 
-#define RELAY_240V 11
-#define RELAY_120V 12
+#define RELAY_120V 11
+#define RELAY_240V 12
 
 // misc constants
 #define MAX_TEMPERATURE 80.0f
 #define MIN_TEMPERATURE 25.0f
 #define MAX_MASHING_TEMPERATURE 74.0f
 #define PUMP_TIMEOUT 10000
-#define STIR_PLATE_PWM 30
-#define STIR_PLATE_WAIT_MS 2000
+#define STIR_PLATE_PWM 90 
+#define STIR_PLATE_START_MS 4000
+#define STIR_PLATE_STOP_MS 5500
+#define HEATER_PERIOD_MS 1000
 
 // PID constants
 #define PID_OUTPUT_LIMIT 1000
 #define P_GAIN 250.0f
-#define I_GAIN 0.0f
-#define D_GAIN 0.0f
-
-#define ON true
-#define OFF false
 
 typedef enum ProgramState {
     kProgramState_WaitingForInput = 0,
@@ -58,7 +55,7 @@ static MAX6675 thermocouple2(THERMO_CLK2, THERMO_CS2, THERMO_DO2);
 
 static MLCScript currentScript;
 
-static int8_t pumpState;
+static int pumpState;
 
 void setup(void) {
     // arduino function that sets up the arduino-specific things
@@ -70,8 +67,9 @@ void setup(void) {
     // set pin modes for the off-board I/O (except thermocouples)
     pinMode(BOBBER_MASHING, INPUT);
     pinMode(BOBBER_SPARGING, INPUT);
-    pinMode(RELAY_240V, OUTPUT);
+    pinMode(STIR_PLATE, OUTPUT);
     pinMode(RELAY_120V, OUTPUT);
+    pinMode(RELAY_240V, OUTPUT);
 
     // apparently the thermocouples need a while to stabilize
     delay(500);
@@ -100,9 +98,10 @@ void writeSuccess(void) {
     Serial.println("OK");
 }
 
-void writeFailure(void) {
+void writeFailure(const char* msg) {
     currentState = kProgramState_WaitingForInput;
-    Serial.println("ERROR");
+    Serial.print("ERROR: ");
+    Serial.println(msg);
     Serial.flush();
 }
 
@@ -114,7 +113,7 @@ void readMLCScript(void) {
     if (strcmp (inputData.stringVal, "BEG") == 0)
         writeSuccess();
     else
-        return writeFailure();
+        return writeFailure("Expected BEG");
 
     // mode: mashing or sparging?
     readNextNullTerminatedString(inputData);
@@ -127,7 +126,7 @@ void readMLCScript(void) {
         writeSuccess();
     }
     else
-        return writeFailure();
+        return writeFailure("Expected MSH or SPG");
 
     currentScript.reset();
 
@@ -139,7 +138,7 @@ void readMLCScript(void) {
 		writeSuccess();
 	}
 	else
-		return writeFailure();
+		return writeFailure("Mash water volume must be >= 0");
 
 
     // number of (temperature, duration) pairs to expect
@@ -148,7 +147,7 @@ void readMLCScript(void) {
     if (scriptLength <= NUM_SETPOINTS) 
         writeSuccess();
     else
-        return writeFailure();
+        return writeFailure("Script length too long");
 
     for (uint8_t i = 0; i < scriptLength; ++i) {
         readNextFourBytes(inputData);
@@ -156,7 +155,7 @@ void readMLCScript(void) {
         if (temperature <= MAX_TEMPERATURE && temperature >= MIN_TEMPERATURE)
             writeSuccess();
         else
-            return writeFailure();
+            return writeFailure("Temperature out of range");
 
         readNextFourBytes(inputData);
         uint32_t durationMillis = inputData.intVal;
@@ -171,7 +170,7 @@ void readMLCScript(void) {
     if (strcmp (inputData.stringVal, "END") == 0)
         writeSuccess();
     else
-        return writeFailure();
+        return writeFailure("Expected END");
 
     Serial.println("RUNNING SCRIPT");
 }
@@ -197,42 +196,42 @@ void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCyc
 
 void runPumpBasedOnMashingBobberPosition(uint32_t elapsedMillis) {
     static int16_t pumpTimeout = 0;
-    int8_t bobberState = digitalRead(BOBBER_MASHING);
-
+    int bobberState = digitalRead(BOBBER_MASHING);
+    
     pumpState = HIGH;
-
     if (bobberState == HIGH) { // bobber signal HIGH means water level is low
         if (pumpTimeout > 0)
             pumpTimeout -= elapsedMillis;
-        else
+        else 
             pumpState = LOW;
     }
     else
         pumpTimeout = PUMP_TIMEOUT;
-
+    
     digitalWrite(RELAY_120V, pumpState);
 }
 
 void runPumpBasedOnSpargingBobberPosition(uint32_t elapsedMillis) {
-    int8_t bobberState = digitalRead(BOBBER_SPARGING);
-    digitalWrite(RELAY_120V, bobberState);
+    int bobberState = digitalRead(BOBBER_SPARGING);
+    pumpState = bobberState;
+    digitalWrite(RELAY_120V, pumpState);
 }
 
 void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis) {
-    if (dutyCycleMillis <= 1000) {
+    if (dutyCycleMillis <= HEATER_PERIOD_MS) {
         if (dutyCycleMillis > 0) {
             digitalWrite(RELAY_240V, HIGH);
             _delay_ms(dutyCycleMillis);
         }
 
         digitalWrite(RELAY_240V, LOW);
-        _delay_ms(1000 - dutyCycleMillis);
+        _delay_ms(HEATER_PERIOD_MS - dutyCycleMillis);
     }
     else
-		writeFailure();
+		writeFailure("Duty cycle must be <= 1000");
 }
 
-float dutyCycleBasedOnPIDControl(float currentTemperature, uint32_t elapsedMillis) {
+float dutyCycleBasedOnProportionalControl(float currentTemperature) {
     static PID pid;
     static float temperatureSetpoint = 0.0f;
     
@@ -240,42 +239,68 @@ float dutyCycleBasedOnPIDControl(float currentTemperature, uint32_t elapsedMilli
 
     temperatureSetpoint = currentScript.currentTemperatureSetpoint();
 	if (ISNAN(temperatureSetpoint)) {
-		writeFailure();
+		writeFailure("No temperature setpoint.");
 		return 0.0f;
 	}
 	
     if (previousTemperatureSetpoint != temperatureSetpoint) {
-        PID newPID(temperatureSetpoint, P_GAIN, I_GAIN, D_GAIN, PID_OUTPUT_LIMIT);
+        PID newPID(temperatureSetpoint, P_GAIN, 0, 0, PID_OUTPUT_LIMIT);
         pid = newPID;
     }
 
-    return pid.nextControlOutput(currentTemperature, elapsedMillis);
+    return pid.nextControlOutput(currentTemperature, 0);
 }
 
-void readTemperaturesFromThermocouples(float* temp1Pointer, float* temp2Pointer) {
-	analogWrite(STIR_PLATE, 0);
-	_delay_ms(STIR_PLATE_WAIT_MS);
-	*temp1Pointer = thermocouple1.readCelsius();
-	*temp2Pointer = thermocouple2.readCelsius();
-	analogWrite(STIR_PLATE, STIR_PLATE_PWM);
+void readTemperaturesFromThermocouples(float& temperature1, float& temperature2) {
+	temperature1 = thermocouple1.readCelsius();
+    temperature2 = thermocouple2.readCelsius();
+    if (ISNAN(temperature1))
+        return writeFailure("Thermocouple 1 reading is NAN.");
+    else if (ISNAN(temperature2))
+        return writeFailure("Thermocouple 2 reading is NAN.");
+}
+
+uint32_t step(uint32_t heaterDutyCycleMillis, float currentTemperature) {
+    static uint32_t lastTime = millis();
+    static bool mashingRampUpCompleted = false;
+    uint32_t currentTime     = millis(),
+             elapsedMillis   = currentTime - lastTime;
+    InputBuffer inputData;
+
+    currentScript.step(elapsedMillis, currentTemperature);
+
+    if (currentState == kProgramState_Mashing) {
+        runPumpBasedOnMashingBobberPosition(elapsedMillis);
+        if (currentScript.inInitialRampUp() && !mashingRampUpCompleted) {
+            mashingRampUpCompleted = true;
+            Serial.println("ADD GRAINS"); 
+            readNextNullTerminatedString(inputData);
+            if (strcmp (inputData.stringVal, "OK!") == 0)
+                writeSuccess();
+            else
+                writeFailure("Expecting confirmation of start of mash.");
+        }
+    }
+    else if (currentState == kProgramState_Sparging)
+        runPumpBasedOnSpargingBobberPosition(elapsedMillis);
+
+    runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
+
+    lastTime = currentTime;
+    return millis() - lastTime;
 }
 
 int main() {
     setup();
 
-    uint32_t lastTime              = millis(),
-             currentTime           = 0,
-             elapsedMillis         = 0,
-             heaterDutyCycleMillis = 0;
+    uint32_t heaterDutyCycleMillis = 0,
+             counter               = 0;
 
-    float temperature1       = 0.0f,
-		  temperature2       = 0.0f,
-		  currentTemperature = 0.0f;
+    float temperature1        = 0.0f,
+		  temperature2        = 0.0f,
+		  currentTemperature  = 0.0f;
 
     while (1) {
-        currentTime = millis();
-        elapsedMillis = currentTime - lastTime;
-
 		// MASHING
 		// =======
 		// Thermocouples:
@@ -298,40 +323,49 @@ int main() {
 		//   The bobber in the mash tun (BOBBER_SPARGING) turns the
 		//   pump on or off, with some hysteresis.
         if (currentState == kProgramState_Mashing || currentState == kProgramState_Sparging) {
-
             // end mashing/sparging if the currentScript has completed
             if (currentScript.completed()) {
                 currentState = kProgramState_WaitingForInput;
                 Serial.println("END OF SCRIPT");
             }
 			else { // run the control system
-				readTemperaturesFromThermocouples(&temperature1, &temperature2);
-
+                // determine values
+                readTemperaturesFromThermocouples(temperature1, temperature2);
 				if (currentState == kProgramState_Mashing) {
 					currentTemperature = temperature2;
+                    currentScript.step(0, currentTemperature);
+                    currentScript.setMashWaterTemperature(temperature2);
 					if (temperature1 >= MAX_MASHING_TEMPERATURE)
 						heaterDutyCycleMillis = 0;
 					else
-						heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(currentTemperature, elapsedMillis);
+						heaterDutyCycleMillis = dutyCycleBasedOnProportionalControl(currentTemperature);
 				}
 				else {
 					currentTemperature = temperature1;
-					heaterDutyCycleMillis = dutyCycleBasedOnPIDControl(currentTemperature, elapsedMillis);
+					heaterDutyCycleMillis = dutyCycleBasedOnProportionalControl(currentTemperature);
 				}
-				currentScript.step(elapsedMillis, currentTemperature);
-	
-				outputStatus(temperature1, temperature2, heaterDutyCycleMillis);
+                
+                // let stir plate run
+                analogWrite(STIR_PLATE, STIR_PLATE_PWM);
+                for (counter = 0; counter < STIR_PLATE_START_MS - HEATER_PERIOD_MS;) {
+                    counter += step(heaterDutyCycleMillis, currentTemperature);
+                    outputStatus(temperature1, temperature2, heaterDutyCycleMillis);
+                }
+                _delay_ms(STIR_PLATE_START_MS - counter);
 
-				runPumpBasedOnMashingBobberPosition(elapsedMillis);
-				runHeaterForDutyCycleMillis(heaterDutyCycleMillis);
+                // wait for stir plate to stop
+                analogWrite(STIR_PLATE, 0);
+                for (counter = 0; counter < STIR_PLATE_STOP_MS - HEATER_PERIOD_MS;) {
+                    counter += step(heaterDutyCycleMillis, currentTemperature);
+                    outputStatus(temperature1, temperature2, heaterDutyCycleMillis);
+                }
+                _delay_ms(STIR_PLATE_STOP_MS - counter);
 			}
 		}
-		else if (currentState == kProgramState_WaitingForInput) {
+		else if (currentState == kProgramState_WaitingForInput)
 			readMLCScript();
-			currentTime = millis(); // don't include time to read script in time steps
-		}
-
-        lastTime = currentTime;        
+        else
+            writeFailure("Unrecognized program state.");
     }
 }
 

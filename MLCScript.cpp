@@ -1,6 +1,7 @@
 #include "MLCScript.h"
 #include "Util.h"
-#define ASSUMED_HLT_VOLUME_ML 35000.0f
+#define ASSUMED_HLT_VOLUME_ML 32000.0f
+#define MAX_TEMPERATURE 79.0f
 
 MLCScript::MLCScript() {
     reset();
@@ -40,20 +41,19 @@ bool MLCScript::inInitialRampUp(void) {
 
 void MLCScript::step(uint32_t elapsedMillis, float currentTemperature) {
 	if (!initialRampUpCompleted && mashWaterVolume > 0) {
-		if (ISNAN(initialRampUpTemperature)) {
-			float setpoint = setpoints[activeSetpointIndex];
-			initialRampUpTemperature = setpoint +
-									   (mashWaterVolume / ASSUMED_HLT_VOLUME_ML *
-									   	   (setpoint - mashWaterTemperature));
-		}
+        float setpoint = setpoints[activeSetpointIndex];
+        initialRampUpTemperature = setpoint +
+                                   (mashWaterVolume / ASSUMED_HLT_VOLUME_ML *
+                                       (setpoint - mashWaterTemperature));
+        if (initialRampUpTemperature > MAX_TEMPERATURE)
+            initialRampUpTemperature = MAX_TEMPERATURE;
 
 		if (currentTemperature >= initialRampUpTemperature)
 			initialRampUpCompleted = true;
 		else
 			return;
 	}
-	
-	if (maxIndex >= 0 && activeSetpointIndex >= 0) {
+    else if (maxIndex >= 0 && activeSetpointIndex >= 0) {
 		counter += elapsedMillis;
 
 		if (counter > setpointDurations[activeSetpointIndex]) {

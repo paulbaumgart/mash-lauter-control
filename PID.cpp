@@ -19,8 +19,11 @@ float PID::nextControlOutput(float inputValue, uint32_t elapsedMillis) {
     float error        = setpoint - inputValue,
           elapsedSecs  = elapsedMillis / 1000.0f,
           proportional = error,
-          derivative   = (error - previousError) / elapsedSecs,
+          derivative, 
           output;
+
+    if (elapsedSecs > 0)
+        derivative = (error - previousError) / elapsedSecs;
 
     // "Usually you can just set the integrator minimum and maximum so that the
     // integrator output matches the drive minimum and maximum."

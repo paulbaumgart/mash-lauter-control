@@ -9,10 +9,11 @@ class RecipeSyntaxError(Exception):
         
 class Recipe(object):
     MASHING, SPARGING = range(2)
-    def __init__(self, mode):
+    def __init__(self, mode, water_vol=0):
         if mode != Recipe.MASHING and mode != Recipe.SPARGING:
             raise ValueError('mode must be either Recipe.MASHING or Recipe.SPARGING')
         self.mode = mode
+        self.water_vol = water_vol
         self.temp_duration_pairs = list()
 
     def add_line(self, line):
@@ -62,7 +63,7 @@ class Recipe(object):
         self.temp_duration_pairs.append((temp, time))
 
     def human_readable(self):
-        strings = ['MASHING' if self.mode == Recipe.MASHING else 'SPARGING']
+        strings = ['MASHING: %s mL water' % self.water_vol if self.mode == Recipe.MASHING else 'SPARGING']
         strings.extend([u"%5.2f \u00B0C for %5.2f minutes" % (pair[0], pair[1] / 1000 / 60) for pair in self.temp_duration_pairs])
         return "\n".join(strings)
 
@@ -70,6 +71,7 @@ class Recipe(object):
         commands = [
             'BEG',
             'MSH' if self.mode == Recipe.MASHING else 'SPG',
+            struct.pack('L', self.water_vol),
             struct.pack('L', len(self.temp_duration_pairs))
         ]
 
@@ -80,7 +82,7 @@ class Recipe(object):
         commands.append('END')
 
         check_value = [(struct.unpack('f', t[0])[0], struct.unpack('L', t[1])[0]) \
-                          for t in zip(commands[3:-1:2], commands[4:-1:2])]
+                          for t in zip(commands[4:-1:2], commands[5:-1:2])]
         assert check_value == self.temp_duration_pairs, \
                    "%s should equal %s" % (check_value, self.temp_duration_pairs)
 
@@ -88,6 +90,24 @@ class Recipe(object):
 
     @staticmethod
     def recipes_from_iterable(iterable):
+        def water_vol_ml_from_str(water_vol_str):
+            try:
+                volume, units = water_vol_str.lower().split()
+            except ValueError:
+                raise RecipeSyntaxError(water_vol_str,
+                        "Expected: 2 values separated by a space: <water volume> <units>. Got: " \
+                            + str(len(water_vol_str.split())) + " value(s).")
+            
+            if units[:1] == 'm':
+                volume = int(volume)
+            elif units[:1] == 'l':
+                volume = int(volume) * 1000
+            else:
+                raise RecipeSyntaxError(water_vol_str,
+                      "Can't parse volume units (expected: 'mL' or 'L').")
+
+            return volume
+
         recipes = list()
         current_recipe = None
         for line_num, line in enumerate(iterable):
@@ -99,9 +119,13 @@ class Recipe(object):
                             recipes.append(current_recipe)
                             current_recipe = None
 
-                        if parts[0] == 'mashing':
-                            current_recipe = Recipe(Recipe.MASHING)
-                        elif parts[0] == 'sparging':
+                        if parts[0][:len('mashing')] == 'mashing':
+                            try:
+                                water_vol_str = parts[0].split(':')[1]
+                            except IndexError:
+                                raise RecipeSyntaxError(line, 'Missing water volume after "%s".' % parts[0][:len('mashing')])
+                            current_recipe = Recipe(Recipe.MASHING, water_vol_ml_from_str(water_vol_str))
+                        elif parts[0][:len('sparging')] == 'sparging':
                             current_recipe = Recipe(Recipe.SPARGING)
                         else:
                             raise RecipeSyntaxError(line, "Can't determine whether you mean MASHING or SPARGING.")
