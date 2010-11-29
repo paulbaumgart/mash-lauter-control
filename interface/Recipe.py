@@ -34,6 +34,8 @@ class Recipe(object):
                 output.append("\tHOLD AT: %s C FOR: %s seconds" %
                               (struct.unpack('f', temperature)[0],
                                float(struct.unpack('L', time)[0]) / 1000))
+            elif command == 'END':
+                pass
             else:
                 raise ValueError, command
 

@@ -27,6 +27,7 @@ class RecipeParser(object):
                 result.extend(next_statement)
             else:
                 self.__fail()
+        result.append('END')
         return result
 
     def __fail(self):

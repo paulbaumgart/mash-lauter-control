@@ -1,89 +1,218 @@
 #include "MLCScript.h"
 #include "Util.h"
 #define ASSUMED_HLT_VOLUME_ML 32000.0f
-#define MAX_TEMPERATURE 79.0f
+#define MAX_MASHING_TEMPERATURE 74.0f
+#define MAX_SPARGING_TEMPERATURE 79.0f
 
-MLCScript::MLCScript() {
+static void readNextNullTerminatedString(char* outBuffer, uint8_t length)
+{
+    while (Serial.available() < length - 1) {}
+
+    uint8_t i;
+
+    for (i = 0; i < length - 1; i++)
+        outBuffer[i] = Serial.read();
+
+    outBuffer[i] = '\0';
+}
+
+static void readNextFourBytes(char* outBuffer) {
+    while (Serial.available() < 4) {}
+
+    for (uint8_t i = 0; i < 4; i++)
+        outBuffer[i] = Serial.read();
+}
+
+static void writeSuccess(void) {
+    Serial.println("OK");
+}
+
+MLCScript::MLCScript(void (*pauseCallback)())
+    : m_pauseCallback (pauseCallback)
+{
     reset();
 }
 
-bool MLCScript::completed() {
-    return activeSetpointIndex == -1;
+void MLCScript::writeUnknownCommand(char* command) {
+    char msg[21] = "Unknown command: XXX";
+    msg[17] = command[0];
+    msg[18] = command[1];
+    msg[19] = command[2];
+    return writeFailure(msg);
+}
+
+void MLCScript::writeFailure(char* msg) {
+    Serial.print("ERROR: ");
+    Serial.println(msg);
+    Serial.flush();
+    m_numStatements = 0;
+    m_completed = true;
 }
 
 void MLCScript::reset() {
-	counter = numSetpoints = activeSetpointIndex = mashWaterVolume = 0;
-	maxIndex = -1;
-	initialRampUpTemperature = NAN;
-	initialRampUpCompleted = false;
+	m_counter = m_numStatements = 
+        m_activeStatementIndex = m_mashWaterVolume = 0;
+    m_currentTemperatureTarget = NAN;
+    m_completed = false;
 }
 
-void MLCScript::addSetpoint(float temperature, uint32_t durationMillis) {
-	maxIndex += 1;
+void MLCScript::step(uint32_t elapsedMillis, float temperature1, float temperature2)
+{
+    if (m_activeStatementIndex >= m_numStatements) {
+        m_completed = true;
+        return;
+    }
 
-	if (maxIndex < NUM_SETPOINTS) {
-		setpoints[maxIndex] = temperature;
-		setpointDurations[maxIndex] = durationMillis;
-	}
+    ScriptStatement* currentStatement = &m_statements[m_activeStatementIndex];
+    uint32_t command = currentStatement->command.uint;
+
+    if (command == STRUINT("MSH")) {
+        m_mode = MASHING;
+        m_activeStatementIndex++;
+        step(elapsedMillis, temperature1, temperature2);
+    }
+    else if (command == STRUINT("SPG")) {
+        m_mode = SPARGING;
+        m_activeStatementIndex++;
+        step(elapsedMillis, temperature1, temperature2);
+    }
+    else if (command == STRUINT("PAU")) {
+        m_pauseCallback();
+        m_activeStatementIndex++;
+    }
+    else if (command == STRUINT("MWV")) {
+        m_mashWaterVolume = currentStatement->f1.volume;
+        m_activeStatementIndex++;
+        step(elapsedMillis, temperature1, temperature2);
+    }
+    else if (command == STRUINT("HEA")) {
+        float setpoint = currentTemperatureSetpoint();
+        if (m_mode == MASHING) {
+            setCurrentTemperatureTarget(setpoint +
+                                          (m_mashWaterVolume / ASSUMED_HLT_VOLUME_ML *
+                                           (setpoint - temperature2)));
+            if (temperature2 >= currentStatement->f1.temperature)
+                m_activeStatementIndex++;
+        }
+        else if (m_mode == SPARGING) {
+            setCurrentTemperatureTarget(setpoint);
+            if (temperature1 >= currentTemperatureTarget())
+                m_activeStatementIndex++;
+        }
+    }
+    else if (command == STRUINT("HLD")) {
+        m_counter += elapsedMillis;
+        setCurrentTemperatureTarget(currentStatement->f1.temperature);
+
+        if (m_counter >= currentStatement->f2.time) {
+            m_counter = 0;
+            m_activeStatementIndex++;
+        }
+    }
+    else
+        return writeUnknownCommand(currentStatement->command.str);
 }
 
-void MLCScript::setMashWaterVolume(uint32_t mashWaterMilliLiters) {
-	mashWaterVolume = mashWaterMilliLiters;
+bool MLCScript::completed()
+{
+    return m_completed;
 }
 
-void MLCScript::setMashWaterTemperature(float mashWaterCelsius) {
-	mashWaterTemperature = mashWaterCelsius;
+Mode MLCScript::mode()
+{
+    return m_mode;
 }
 
-bool MLCScript::inInitialRampUp(void) {
-	return !initialRampUpCompleted && mashWaterVolume > 0 && !ISNAN(initialRampUpTemperature);
+void MLCScript::readFromSerial()
+{
+    reset();
+    ScriptStatement currentStatement;
+    for (uint8_t i = 0; i < NUM_STATEMENTS; i++) {
+        readNextNullTerminatedString(currentStatement.command.str, 4);
+        uint32_t command = currentStatement.command.uint;
+        if (command == STRUINT("MSH") ||
+            command == STRUINT("SPG") ||
+            command == STRUINT("PAU")) {
+            currentStatement.f1.temperature = NAN;
+            writeSuccess();
+        }
+        else if (command == STRUINT("MWV") ||
+            command == STRUINT("HEA")) {
+            writeSuccess();
+            readNextFourBytes((char*)&currentStatement.f1);
+            writeSuccess();
+        }
+        else if (command == STRUINT("HLD")) {
+            writeSuccess();
+            readNextFourBytes((char*)&currentStatement.f1);
+            writeSuccess();
+            readNextFourBytes((char*)&currentStatement.f2);
+            writeSuccess();
+        }
+        else if (command == STRUINT("END"))
+            return writeSuccess();
+        else
+            return writeUnknownCommand(currentStatement.command.str);
+
+        m_statements[m_numStatements] = currentStatement;
+        m_numStatements++;
+    }
+
+    readNextNullTerminatedString(currentStatement.command.str, 4);
+    if (currentStatement.command.uint != STRUINT("END"))
+        return writeFailure((char*)"Too many statements in script.");
+    else
+        return writeSuccess();
 }
 
-void MLCScript::step(uint32_t elapsedMillis, float currentTemperature) {
-	if (!initialRampUpCompleted && mashWaterVolume > 0) {
-        float setpoint = setpoints[activeSetpointIndex];
-        initialRampUpTemperature = setpoint +
-                                   (mashWaterVolume / ASSUMED_HLT_VOLUME_ML *
-                                       (setpoint - mashWaterTemperature));
-        if (initialRampUpTemperature > MAX_TEMPERATURE)
-            initialRampUpTemperature = MAX_TEMPERATURE;
+void MLCScript::setCurrentTemperatureTarget(float currentTemperatureTarget)
+{
+    if (m_mode == MASHING) {
+        if (currentTemperatureTarget > MAX_MASHING_TEMPERATURE)
+            currentTemperatureTarget = MAX_MASHING_TEMPERATURE;
+    }
+    else if (m_mode == SPARGING) {
+        if (currentTemperatureTarget > MAX_SPARGING_TEMPERATURE)
+            currentTemperatureTarget = MAX_SPARGING_TEMPERATURE;
+    }
 
-		if (currentTemperature >= initialRampUpTemperature)
-			initialRampUpCompleted = true;
-		else
-			return;
-	}
-    else if (maxIndex >= 0 && activeSetpointIndex >= 0) {
-		counter += elapsedMillis;
-
-		if (counter > setpointDurations[activeSetpointIndex]) {
-			// this duration has ended
-			counter = 0;
-			activeSetpointIndex += 1;
-
-			if (activeSetpointIndex > maxIndex)
-				activeSetpointIndex = -1;
-		}
-	}
+    m_currentTemperatureTarget = currentTemperatureTarget;
 }
 
-float MLCScript::currentTemperatureSetpoint(void) {
-	if (!initialRampUpCompleted)
-		return initialRampUpTemperature;
-	else if (activeSetpointIndex >= 0)
-		return setpoints[activeSetpointIndex];
-	else
-		return NAN;
+float MLCScript::currentTemperatureSetpoint(void)
+{
+    return m_statements[m_activeStatementIndex].f1.temperature;
 }
 
-uint32_t MLCScript::timeInCurrentInterval(void) {
-    return counter;
+float MLCScript::currentTemperatureTarget(void)
+{
+    return m_currentTemperatureTarget;
 }
 
-uint32_t MLCScript::currentIntervalDuration(void) {
-    if (activeSetpointIndex >= 0)
-        return setpointDurations[activeSetpointIndex];
+uint32_t MLCScript::timeInCurrentInterval(void)
+{
+    return m_counter;
+}
+
+uint32_t MLCScript::currentIntervalDuration(void)
+{
+    ScriptStatement* currentStatement = &m_statements[m_activeStatementIndex];
+
+    if (currentStatement->command.uint == STRUINT("HLD"))
+        return currentStatement->f2.time;
     else
         return 0;
+}
+
+void MLCScript::currentCommand(char* outBuffer) {
+    char defaultCommand[] = "NON";
+    char* command;
+    if (m_numStatements > 0)
+        command = m_statements[m_activeStatementIndex].command.str;
+    else
+        command = defaultCommand;
+
+    for (int i = 0; i < 4; i++)
+        outBuffer[i] = command[i];
 }
 

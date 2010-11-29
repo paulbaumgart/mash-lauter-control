@@ -23,7 +23,6 @@ class SerialCommunicator(object):
         self.serial = serial.Serial('/dev/' + device, 9600, timeout=10)
         self.serial.flushInput()
         self.serial.flushOutput()
-        self.ensure_next_output_line_is('PROGRAM RUNNING')
 
     def write_recipe(self, recipe):
         commands = recipe.serial_commands()
@@ -32,14 +31,8 @@ class SerialCommunicator(object):
             self.serial.write(command)
             self.ensure_next_output_line_is('OK', command) 
 
-        self.ensure_next_output_line_is('RUNNING SCRIPT')
-
     def read_current_status(self):
-       current_status = self.serial.readline().strip()
-       if current_status == 'ADD GRAINS':
-           raw_input('Add grains and press Enter to continue.')
-       else:
-           return current_status            
+       return self.serial.readline().strip()
 
     def ensure_next_output_line_is(self, expected, command=None):
         output = self.serial.readline().strip()
@@ -48,16 +41,21 @@ class SerialCommunicator(object):
 
 
 if __name__ == '__main__':
-    import fileinput, sys
-    from Recipe import *
+    import fileinput
+    from Recipe import Recipe
+
     s = SerialCommunicator()
-    try:
-        s.open()
-        rs = Recipe.recipes_from_iterable(fileinput.input())
-        s.write_recipe(rs[0])
-    except DeviceSyncError as e:
-        print e.value
-        sys.exit(1)
+    s.open()
+    time.sleep(1)
+    recipe_str = ''.join(list(fileinput.input()))
+    recipe = Recipe(recipe_str)
+    print "\n".join(recipe.human_readable())
+    s.write_recipe(recipe)
 
     while True:
-        print s.read_current_status()
+        current_status = s.read_current_status()
+        if current_status == 'PAUSED':
+            raw_input('Paused. Press Enter to continue.')
+            s.serial.write('K')
+        else:
+            print current_status

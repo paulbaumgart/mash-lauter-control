@@ -2,9 +2,9 @@ import re
 
 class RecipeLexer(object):
     TOKENS = [
+        (r'(mash )?(water )?vol(\.|ume)?:?', 'MASH_VOLUME'),
         (r'mash(ing)?:?', 'MASHING'),
         (r'sparg(e|ing):?', 'SPARGING'),
-        (r'(mash )?(water )?vol(\.|ume)?:?', 'MASH_VOLUME'),
         (r'heat( to)?:?', 'HEAT'),
         (r'hold( at)?:?', 'HOLD'),
         (r'wait|pause', 'PAUSE'),
