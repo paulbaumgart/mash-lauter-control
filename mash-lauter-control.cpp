@@ -79,10 +79,15 @@ void writeFailure(const char* msg)
 void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCycleMillis)
 {
     char buffer[4];
+    currentScript.currentCommand(buffer);
+
+    if (strcmp(buffer, "SPG") == 0 ||
+        strcmp(buffer, "MSH") == 0 ||
+        strcmp(buffer, "PAU") == 0)
+        return;
 
     Serial.print(currentScript.mode() == MASHING ? "MASHING" : "SPARGING");
     Serial.print(',');
-    currentScript.currentCommand(buffer);
     Serial.print(buffer);
     Serial.print(',');
     Serial.print(currentScript.timeInCurrentInterval());
@@ -164,7 +169,7 @@ float dutyCycleBasedOnProportionalControl(float currentTemperature)
 
     temperatureTarget = currentScript.currentTemperatureTarget();
 	if (ISNAN(temperatureTarget)) {
-		writeFailure("No temperature setpoint.");
+		writeFailure("Temperature setpoint is NAN. Are thermocouples connected?");
 		return 0.0f;
 	}
 	

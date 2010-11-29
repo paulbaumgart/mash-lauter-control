@@ -2,6 +2,21 @@ import os
 import serial
 import time
 
+# SPARGING,HEA,0,0,31.00,24.25,40.00,40.00,1000,ON
+OUTPUT_TEMPLATE = \
+"""
+%s:
+    Stage type:         %s
+    Time in stage:      %s
+    Duration of stage:  %s
+    HLT temperature:    %s
+    Grain temperature:  %s
+    Setpoint:           %s
+    Target temperature: %s
+    Heater duty cycle:  %s
+    Pump state:         %s
+"""
+
 class DeviceSyncError(Exception):
     def __init__(self, expected, output, command=None):
         self.value = 'Error: Expected: "' + expected \
@@ -20,7 +35,7 @@ class SerialCommunicator(object):
         except:
             raise Exception("Can't open USB serial connection. Is the microcontroller connected?")
 
-        self.serial = serial.Serial('/dev/' + device, 9600, timeout=10)
+        self.serial = serial.Serial('/dev/' + device, 9600, timeout=5)
         self.serial.flushInput()
         self.serial.flushOutput()
 
@@ -39,23 +54,11 @@ class SerialCommunicator(object):
         if output != expected:
             raise DeviceSyncError(expected, output, command)
 
+    @staticmethod
+    def human_readable_status(status):
+        try:
+            output = OUTPUT_TEMPLATE % tuple(status.split(',')) 
+            return output
+        except TypeError:
+            return status
 
-if __name__ == '__main__':
-    import fileinput
-    from Recipe import Recipe
-
-    s = SerialCommunicator()
-    s.open()
-    time.sleep(1)
-    recipe_str = ''.join(list(fileinput.input()))
-    recipe = Recipe(recipe_str)
-    print "\n".join(recipe.human_readable())
-    s.write_recipe(recipe)
-
-    while True:
-        current_status = s.read_current_status()
-        if current_status == 'PAUSED':
-            raw_input('Paused. Press Enter to continue.')
-            s.serial.write('K')
-        else:
-            print current_status
