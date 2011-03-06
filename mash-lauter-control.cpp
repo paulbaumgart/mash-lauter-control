@@ -32,14 +32,15 @@
 #define PID_OUTPUT_LIMIT 1000
 #define P_GAIN 250.0f
 
-static void pauseCallback();
+static void pause();
 
 static MAX6675 thermocouple1(THERMO_CLK1, THERMO_CS1, THERMO_DO1);
 static MAX6675 thermocouple2(THERMO_CLK2, THERMO_CS2, THERMO_DO2);
 
-static MLCScript currentScript(pauseCallback);
+static MLCScript currentScript(pause);
 
 static int pumpState;
+static int16_t pumpTimeout;
 
 static bool experiencedError = false;
 
@@ -74,6 +75,7 @@ void writeFailure(const char* msg)
     Serial.print("ERROR: ");
     Serial.println(msg);
     Serial.flush();
+    pause();
 }
 
 void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCycleMillis)
@@ -111,7 +113,6 @@ void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCyc
 void runPumpBasedOnBobberPosition(uint32_t elapsedMillis)
 {
     if (currentScript.mode() == MASHING) {
-        static int16_t pumpTimeout = 0;
         int bobberState = digitalRead(BOBBER_MASHING);
         
         pumpState = HIGH;
@@ -149,11 +150,12 @@ void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis)
 }
 
 
-void pauseCallback()
+void pause()
 {
     Serial.flush();
     Serial.println("PAUSED");
     pumpState = LOW;
+    pumpTimeout = 0;
     digitalWrite(RELAY_120V, pumpState);
     digitalWrite(STIR_PLATE, LOW);
     while (Serial.available() < 1) {}
