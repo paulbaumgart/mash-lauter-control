@@ -1,8 +1,7 @@
 #include "MLCScript.h"
 #include "Util.h"
 #define ASSUMED_HLT_VOLUME_ML 32000.0f
-#define MAX_MASHING_TEMPERATURE 74.0f
-#define MAX_SPARGING_TEMPERATURE 79.0f
+#define MAX_TEMPERATURE 79.0f
 
 static void readNextNullTerminatedString(char* outBuffer, uint8_t length)
 {
@@ -167,14 +166,8 @@ void MLCScript::readFromSerial()
 
 void MLCScript::setCurrentTemperatureTarget(float currentTemperatureTarget)
 {
-    if (m_mode == MASHING) {
-        if (currentTemperatureTarget > MAX_MASHING_TEMPERATURE)
-            currentTemperatureTarget = MAX_MASHING_TEMPERATURE;
-    }
-    else if (m_mode == SPARGING) {
-        if (currentTemperatureTarget > MAX_SPARGING_TEMPERATURE)
-            currentTemperatureTarget = MAX_SPARGING_TEMPERATURE;
-    }
+    if (currentTemperatureTarget > MAX_TEMPERATURE)
+        currentTemperatureTarget = MAX_TEMPERATURE;
 
     m_currentTemperatureTarget = currentTemperatureTarget;
 }
