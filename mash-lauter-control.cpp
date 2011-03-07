@@ -51,7 +51,7 @@ void setup(void)
     init();
 
     // set USB communication to 9600 b/s
-	Serial.begin(9600);
+    Serial.begin(9600);
 
     // set pin modes for the off-board I/O (except thermocouples)
     pinMode(BOBBER_GRANT, INPUT);
@@ -126,14 +126,16 @@ void runPumpBasedOnBobberPosition(uint32_t elapsedMillis)
         }
         else
             pumpTimeout = PUMP_TIMEOUT;
-        
-        digitalWrite(RELAY_120V, pumpState);
     }
     else if (currentScript.mode() == SPARGING) {
         int bobberState = digitalRead(BOBBER_MLT);
         pumpState = bobberState;
-        digitalWrite(RELAY_120V, pumpState);
     }
+    else {
+        pumpState = LOW;
+    }
+
+    digitalWrite(RELAY_120V, pumpState);
 }
 
 void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis)
@@ -147,8 +149,9 @@ void runHeaterForDutyCycleMillis(uint32_t dutyCycleMillis)
         digitalWrite(RELAY_240V, LOW);
         _delay_ms(HEATER_PERIOD_MS - dutyCycleMillis);
     }
-    else
-		writeFailure("Duty cycle must be <= 1000");
+    else {
+        writeFailure("Duty cycle must be <= 1000");
+    }
 }
 
 
@@ -172,11 +175,11 @@ float dutyCycleBasedOnProportionalControl(float currentTemperature)
     float previousTemperatureTarget = temperatureTarget;
 
     temperatureTarget = currentScript.currentTemperatureTarget();
-	if (ISNAN(temperatureTarget)) {
-		writeFailure("Temperature setpoint is NAN. Are thermocouples connected?");
-		return 0.0f;
-	}
-	
+    if (ISNAN(temperatureTarget)) {
+        writeFailure("Temperature setpoint is NAN. Are thermocouples connected?");
+        return 0.0f;
+    }
+    
     if (previousTemperatureTarget != temperatureTarget) {
         PID newPID(temperatureTarget, P_GAIN, 0, 0, PID_OUTPUT_LIMIT);
         pid = newPID;
@@ -187,7 +190,7 @@ float dutyCycleBasedOnProportionalControl(float currentTemperature)
 
 void readTemperaturesFromThermocouples(float& temperature1, float& temperature2)
 {
-	temperature1 = thermocouple1.readCelsius();
+    temperature1 = thermocouple1.readCelsius();
     temperature2 = thermocouple2.readCelsius();
     if (ISNAN(temperature1))
         return writeFailure("Thermocouple 1 reading is NAN.");
@@ -228,7 +231,7 @@ int main()
     uint32_t counter = 0;
 
     float temperature1 = 0.0f,
-		  temperature2 = 0.0f;
+          temperature2 = 0.0f;
 
     readTemperaturesFromThermocouples(temperature1, temperature2);
 
