@@ -20,6 +20,7 @@ class RecipeLexer(object):
         (r'seconds?|secs?|s', 'SECONDS'),
         (r'minutes?|mins?|m', 'MINUTES'),
         (r'hours?|h', 'HOURS'),
+        (r'#.*', 'COMMENT'),
     ]
 
     def __init__(self, recipe):
@@ -51,7 +52,8 @@ class RecipeLexer(object):
                 if match:
                     matched_str = match.group(0)
                     token = token_name, matched_str, line_number
-                    tokens.append(token)
+                    if token_name != 'COMMENT':
+                        tokens.append(token)
                     recipe_str = recipe_str[len(matched_str):]
                     found_match = True
                     break
