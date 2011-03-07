@@ -63,7 +63,10 @@ class SerialCommunicator(object):
 
         try:
             status_items = status.split(',')
-            status_items[2:4] = map(ms_to_minsecs, status_items[2:4])
+            if int(status_items[3]) == 0:
+                status_items[2:4] = ['N/A', 'N/A']
+            else:
+                status_items[2:4] = map(ms_to_minsecs, status_items[2:4])
             output = OUTPUT_TEMPLATE % tuple(status_items) 
             return output
         except:

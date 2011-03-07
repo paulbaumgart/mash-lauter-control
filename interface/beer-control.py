@@ -8,7 +8,12 @@ def usage():
 
 def play_sound(filename):
     sound = wave.open(filename,'rb')
-    dsp = ossaudiodev.open('/dev/dsp','w')
+
+    try:
+        dsp = ossaudiodev.open('/dev/dsp','w')
+    except IOError:
+        return
+
     dsp.setparameters(ossaudiodev.AFMT_S16_NE,
                       sound.getnchannels(),
                       sound.getframerate())
@@ -46,14 +51,26 @@ else:
     s.write_recipe(recipe)
 
 while True:
+    had_error = False
     current_status = s.read_current_status()
     #current_status = 'SPARGING,HEA,0,0,31.00,24.25,40.00,40.00,1000,ON'
     if current_status == 'PAUSED':
-        play_sound('flgalarm.wav')
+        if had_error:
+            play_sound('interface/alarm.wav')
+        else:
+            play_sound('interface/ding.wav')
+            play_sound('interface/ding.wav')
+            play_sound('interface/ding.wav')
+
         raw_input('Paused. Press Enter to continue.')
         s.serial.write('K')
+        had_error = False
     else:
         os.system("clear")
         log_file.write(time.asctime() + ',' + current_status + "\n")
-        print SerialCommunicator.human_readable_status(current_status) 
+        output = SerialCommunicator.human_readable_status(current_status) 
+        if output[:5] == 'ERROR':
+            had_error = True
+        print output
+
 

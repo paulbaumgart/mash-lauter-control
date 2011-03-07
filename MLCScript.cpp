@@ -68,7 +68,7 @@ void MLCScript::step(uint32_t elapsedMillis, float hltTemperature, float grainTe
 
     m_hltTemperature = hltTemperature;
     m_grainTemperature = grainTemperature;
-
+    
     if (command == STRUINT("INI") ||
         command == STRUINT("MSH") ||
         command == STRUINT("SPG")) {
@@ -86,6 +86,7 @@ void MLCScript::step(uint32_t elapsedMillis, float hltTemperature, float grainTe
     else if (command == STRUINT("PAU")) {
         m_pauseCallback();
         m_activeStatementIndex++;
+        step(0, hltTemperature, grainTemperature);
     }
     else if (command == STRUINT("MWV")) {
         m_mashWaterVolume = currentStatement->f1.volume;
@@ -96,8 +97,10 @@ void MLCScript::step(uint32_t elapsedMillis, float hltTemperature, float grainTe
         float currentTemperature = (m_mode == MASHING) ?
                                        grainTemperature
                                      : hltTemperature;
-        if (currentTemperature >= currentTemperatureTarget())
+        if (currentTemperature >= currentTemperatureTarget()) {
             m_activeStatementIndex++;
+            step(0, hltTemperature, grainTemperature);
+        }
     }
     else if (command == STRUINT("HLD")) {
         m_counter += elapsedMillis;
@@ -105,6 +108,7 @@ void MLCScript::step(uint32_t elapsedMillis, float hltTemperature, float grainTe
         if (m_counter >= currentStatement->f2.time) {
             m_counter = 0;
             m_activeStatementIndex++;
+            step(0, hltTemperature, grainTemperature);
         }
     }
     else
@@ -172,7 +176,7 @@ float MLCScript::currentTemperatureSetpoint(void)
 float MLCScript::currentTemperatureTarget(void)
 {
     float setpoint = currentTemperatureSetpoint(),
-          offset = 0;
+          offset = 0.0f;
 
     if (m_mode == MASHING) {
         offset = m_mashWaterVolume / ASSUMED_HLT_VOLUME_ML

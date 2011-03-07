@@ -12,7 +12,9 @@ class Recipe(object):
         output = list()
         while index < len(self.__commands):
             command = self.__commands[index]
-            if command == 'MSH':
+            if command == 'INI':
+                output.append('INITIALIZE:')
+            elif command == 'MSH':
                 output.append('MASHING:')
             elif command == 'SPG':
                 output.append('SPARGING:')

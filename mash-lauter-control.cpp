@@ -45,8 +45,6 @@ static MLCScript currentScript(pause);
 static int pumpState;
 static int16_t pumpTimeout;
 
-static bool experiencedError = false;
-
 void setup(void)
 {
     // arduino function that sets up the arduino-specific things
@@ -74,7 +72,6 @@ void writeSuccess(void)
 
 void writeFailure(const char* msg)
 {
-    experiencedError = true;
     Serial.print("ERROR: ");
     Serial.println(msg);
     Serial.flush();
@@ -208,6 +205,10 @@ uint32_t step(float temperature1, float temperature2)
 
 
     currentScript.step(elapsedMillis, temperature1, temperature2);
+
+    if (currentScript.completed())
+        return 0;
+
     currentTime = millis(); // ignore time taken for script to step
 
     heaterDutyCycleMillis = dutyCycleBasedOnProportionalControl(temperature1);
@@ -230,28 +231,40 @@ int main()
     float temperature1 = 0.0f,
 		  temperature2 = 0.0f;
 
+    readTemperaturesFromThermocouples(temperature1, temperature2);
+
     currentScript.readFromSerial();
 
+    if (ISNAN(temperature1))
+        writeFailure("Thermocouple 1 reading is NAN.");
+    if (ISNAN(temperature2))
+        writeFailure("Thermocouple 2 reading is NAN.");
+
+
     while (true) {
-        if (!currentScript.completed() && !experiencedError) {
+        if (!currentScript.completed()) {
             readTemperaturesFromThermocouples(temperature1, temperature2);
 
             // let stir plate run
             analogWrite(STIR_PLATE, STIR_PLATE_PWM);
-            for (counter = 0; counter < STIR_PLATE_START_MS - HEATER_PERIOD_MS;)
+            counter = 0;
+            while (counter < STIR_PLATE_START_MS - HEATER_PERIOD_MS &&
+                   !currentScript.completed()) {
                 counter += step(temperature1, temperature2);
+            }
 
             _delay_ms(STIR_PLATE_START_MS - counter);
 
             // wait for stir plate to stop
             analogWrite(STIR_PLATE, 0);
-            for (counter = 0; counter < STIR_PLATE_STOP_MS - HEATER_PERIOD_MS;)
+            counter = 0;
+            while (counter < STIR_PLATE_STOP_MS - HEATER_PERIOD_MS &&
+                   !currentScript.completed()) {
                 counter += step(temperature1, temperature2);
+            }
             
             _delay_ms(STIR_PLATE_STOP_MS - counter);
         }
-        else if (!experiencedError)
-            currentScript.readFromSerial();
     }
 }
 
