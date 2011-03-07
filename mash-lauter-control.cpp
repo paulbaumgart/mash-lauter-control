@@ -34,7 +34,10 @@
 
 static void pause();
 
+// Thermocouple 1 is in the Hot-Liquor Tank
 static MAX6675 thermocouple1(THERMO_CLK1, THERMO_CS1, THERMO_DO1);
+
+// Thermocouple 2 is in the grain bed
 static MAX6675 thermocouple2(THERMO_CLK2, THERMO_CS2, THERMO_DO2);
 
 static MLCScript currentScript(pause);
@@ -88,7 +91,10 @@ void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCyc
         strcmp(buffer, "PAU") == 0)
         return;
 
-    Serial.print(currentScript.mode() == MASHING ? "MASHING" : "SPARGING");
+    Serial.print(currentScript.mode() == MASHING ? "MASHING"
+               : currentScript.mode() == SPARGING ? "SPARGING"
+               : currentScript.mode() == INITIALIZE ? "INITIALIZE"
+               : "UNKNOWN");
     Serial.print(',');
     Serial.print(buffer);
     Serial.print(',');

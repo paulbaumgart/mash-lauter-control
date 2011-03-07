@@ -20,7 +20,8 @@ typedef struct {
 } ScriptStatement;
 
 typedef enum Mode {
-    MASHING = 0,
+    INITIALIZE = 0,
+    MASHING,
     SPARGING,
     MODE_COUNT
 } Mode;
@@ -29,7 +30,7 @@ class MLCScript {
 public:
     MLCScript(void (*pauseCallback)());
     void reset(void);
-    void step(uint32_t elapsedMillis, float temperature1, float temperature2);
+    void step(uint32_t elapsedMillis, float hltTemperature, float grainTemperature);
     Mode mode(void);
     void readFromSerial(void);
     float currentTemperatureSetpoint(void);
@@ -40,7 +41,6 @@ public:
     void currentCommand(char* outBuffer);
 
 private:
-    void setCurrentTemperatureTarget(float);
     void writeFailure(char*);
     void writeUnknownCommand(char*);
     enum Mode m_mode;
@@ -48,9 +48,10 @@ private:
              m_mashWaterVolume;
     ScriptStatement m_statements[NUM_STATEMENTS];
     uint8_t m_numStatements;
-    float m_currentTemperatureTarget;
     int8_t m_activeStatementIndex;
     bool m_completed;
+    float m_hltTemperature;
+    float m_grainTemperature;
     void (*m_pauseCallback)();
 };
 

@@ -55,7 +55,9 @@ class RecipeParser(object):
         result = list()
         token, recipe_str, line_number = self.__next_token()
 
-        if token == 'MASHING':
+        if token == 'INITIALIZE':
+            return ['INI']
+        elif token == 'MASHING':
             return ['MSH', 'PAU']
         elif token == 'SPARGING':
             return ['SPG', 'PAU']

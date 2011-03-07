@@ -1,14 +1,14 @@
+INITIALIZE:
+    HEAT TO: 69.2 C 
 MASHING: 
     MASH WATER VOLUME: 11300 mL
-    HEAT TO: 23 C
+    HEAT TO: 69.2 C
     PAUSE 
-    HOLD AT: 22 C FOR: 5 s 
-    HEAT TO: 24 C
-    HOLD AT: 23.5 C FOR: 30s
-    HEAT TO: 25 C
-    HOLD AT: 24 C FOR: 30 SeCoNdS
+    HOLD AT: 65.5 C FOR: 40 mins  
+    HEAT TO: 70.5 C
+    HOLD AT: 70.5 C FOR: 40 mins 
+    HOLD AT: 76 C FOR: 10 minutes 
 SPARGE:
-    PAUSE
-    HEAT TO: 40 C
-    HOLD AT: 40 C FOR: 60 m
+    HEAT TO: 76 C
+    HOLD AT: 76 C FOR: 60 minutes
 
