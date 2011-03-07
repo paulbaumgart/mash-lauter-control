@@ -56,9 +56,16 @@ class SerialCommunicator(object):
 
     @staticmethod
     def human_readable_status(status):
+        def ms_to_minsecs(ms):
+            mins = int(ms) / 1000 / 60
+            secs = int(ms)/1000 - mins * 60
+            return "%d:%02d" % (mins, secs)
+
         try:
-            output = OUTPUT_TEMPLATE % tuple(status.split(',')) 
+            status_items = status.split(',')
+            status_items[2:4] = map(ms_to_minsecs, status_items[2:4])
+            output = OUTPUT_TEMPLATE % tuple(status_items) 
             return output
-        except TypeError:
+        except:
             return status
 
