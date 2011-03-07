@@ -6,15 +6,17 @@ import time
 OUTPUT_TEMPLATE = \
 """
 %s:
-    Stage type:         %s
-    Time in stage:      %s
-    Duration of stage:  %s
-    HLT temperature:    %s
-    Grain temperature:  %s
-    Setpoint:           %s
-    Target temperature: %s
-    Heater duty cycle:  %s
-    Pump state:         %s
+    Stage type:             %s
+    Time in stage:          %s
+    Duration of stage:      %s
+    HLT temperature:        %s
+    Grain temperature:      %s
+    Setpoint:               %s
+    HLT target temperature: %s
+    Heater duty cycle:      %s/1000
+    Pump state:             %s
+    Grant Bobber:           %s
+    MLT Bobber:             %s
 """
 
 class DeviceSyncError(Exception):

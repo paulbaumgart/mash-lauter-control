@@ -13,8 +13,8 @@
 #define THERMO_DO2  6
 #define THERMO_CLK2 7
 
-#define BOBBER_SPARGING 8
-#define BOBBER_MASHING  9
+#define BOBBER_MLT 8
+#define BOBBER_GRANT  9
 
 #define STIR_PLATE 10
 
@@ -54,8 +54,8 @@ void setup(void)
 	Serial.begin(9600);
 
     // set pin modes for the off-board I/O (except thermocouples)
-    pinMode(BOBBER_MASHING, INPUT);
-    pinMode(BOBBER_SPARGING, INPUT);
+    pinMode(BOBBER_GRANT, INPUT);
+    pinMode(BOBBER_MLT, INPUT);
     pinMode(STIR_PLATE, OUTPUT);
     pinMode(RELAY_120V, OUTPUT);
     pinMode(RELAY_240V, OUTPUT);
@@ -83,15 +83,10 @@ void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCyc
     char buffer[4];
     currentScript.currentCommand(buffer);
 
-    if (strcmp(buffer, "SPG") == 0 ||
-        strcmp(buffer, "MSH") == 0 ||
-        strcmp(buffer, "PAU") == 0)
-        return;
-
     Serial.print(currentScript.mode() == MASHING ? "MASHING"
                : currentScript.mode() == SPARGING ? "SPARGING"
                : currentScript.mode() == INITIALIZE ? "INITIALIZE"
-               : "UNKNOWN");
+               : "UNKNOWN MODE");
     Serial.print(',');
     Serial.print(buffer);
     Serial.print(',');
@@ -110,13 +105,17 @@ void outputStatus(float temperature1, float temperature2, uint32_t heaterDutyCyc
     Serial.print(heaterDutyCycleMillis);
     Serial.print(',');
     Serial.print(pumpState == HIGH ? "ON" : "OFF");
+    Serial.print(',');
+    Serial.print(digitalRead(BOBBER_GRANT) == HIGH ? "DOWN" : "UP");
+    Serial.print(',');
+    Serial.print(digitalRead(BOBBER_MLT) == HIGH ? "DOWN" : "UP");
     Serial.println("");
 }
 
 void runPumpBasedOnBobberPosition(uint32_t elapsedMillis)
 {
     if (currentScript.mode() == MASHING) {
-        int bobberState = digitalRead(BOBBER_MASHING);
+        int bobberState = digitalRead(BOBBER_GRANT);
         
         pumpState = HIGH;
         if (bobberState == HIGH) { // bobber signal HIGH means water level is low
@@ -131,7 +130,7 @@ void runPumpBasedOnBobberPosition(uint32_t elapsedMillis)
         digitalWrite(RELAY_120V, pumpState);
     }
     else if (currentScript.mode() == SPARGING) {
-        int bobberState = digitalRead(BOBBER_SPARGING);
+        int bobberState = digitalRead(BOBBER_MLT);
         pumpState = bobberState;
         digitalWrite(RELAY_120V, pumpState);
     }
