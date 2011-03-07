@@ -56,9 +56,9 @@ class RecipeParser(object):
         token, recipe_str, line_number = self.__next_token()
 
         if token == 'MASHING':
-            return ['MSH']
+            return ['MSH', 'PAU']
         elif token == 'SPARGING':
-            return ['SPG']
+            return ['SPG', 'PAU']
         elif token == 'PAUSE':
             return ['PAU']
         else:
