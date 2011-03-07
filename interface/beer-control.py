@@ -42,24 +42,32 @@ time.sleep(1)
 
 log_file = open(log_file_name, 'a')
 
-if s.read_current_status():
-    print 'Program already running. Reset device to write new recipe.'
+current_status = s.read_current_status()
+
+if current_status:
+    if current_status[:5] == 'ERROR':
+        print current_status
+    else:
+        print 'ERROR: Program already running. Reset the device and try again.'
+    sys.exit(1)
 else:
     recipe = Recipe(open(recipe_file_name, 'r').read())
     print 'Sending recipe:'
     print "\n".join(recipe.human_readable())
-    s.write_recipe(recipe)
+    try:
+        s.write_recipe(recipe)
+    except DeviceSyncError as err:
+        print err
+        sys.exit(1)
 
+had_error = False
 while True:
-    had_error = False
     current_status = s.read_current_status()
     #current_status = 'SPARGING,HEA,0,0,31.00,24.25,40.00,40.00,1000,ON'
     if current_status == 'PAUSED':
         if had_error:
             play_sound('interface/alarm.wav')
         else:
-            play_sound('interface/ding.wav')
-            play_sound('interface/ding.wav')
             play_sound('interface/ding.wav')
 
         raw_input('Paused. Press Enter to continue.')
