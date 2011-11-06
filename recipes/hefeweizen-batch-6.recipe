@@ -1,0 +1,14 @@
+INITIALIZATION:
+    PAUSE
+    HEAT TO: 69.2 C
+    PAUSE
+MASHING:
+    MASH WATER VOLUME: 16300 mL
+    HEAT TO: 69.2 C
+    PAUSE
+    HOLD AT: 67.2 C FOR: 80 mins
+    HOLD AT: 78 C FOR: 10 minutes
+SPARGE
+    PAUSE
+    HEAT TO: 78 C
+    HOLD AT: 78 C FOR: 90 mins

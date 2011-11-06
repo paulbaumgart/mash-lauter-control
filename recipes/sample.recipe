@@ -1,0 +1,15 @@
+INITIALIZATION: # These temperatures are in the HLT
+    HEAT TO: 22 C
+MASHING: # These temperatures are in the grain bed 
+    MASH WATER VOLUME: 11300 mL
+    HEAT TO: 69.2 C
+    PAUSE # This means wait until the user hits Enter
+    HOLD AT: 65.5 C FOR: 40 mins
+    HOLD AT: 70.5 C FOR: 40 mins
+    HOLD AT: 76 C FOR: 10 minutes
+SPARGE: # These temperatures are in the HLT
+    HEAT TO: 76 C
+    HOLD AT: 76 C FOR: 60 minutes
+
+# Mashing or sparging transitions imply a PAUSE
+
