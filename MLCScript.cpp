@@ -1,7 +1,7 @@
 #include "MLCScript.h"
 #include "Util.h"
 #define ASSUMED_HLT_VOLUME_ML 32000.0f
-#define ASSUMED_DEGREES_HEAT_LOSS 0.5f
+#define ASSUMED_DEGREES_HEAT_LOSS 1.5f
 #define MAX_TEMPERATURE 79.0f
 
 static void readNextNullTerminatedString(char* outBuffer, uint8_t length)
