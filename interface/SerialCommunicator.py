@@ -53,6 +53,7 @@ class SerialCommunicator(object):
 
     def ensure_next_output_line_is(self, expected, command=None):
         output = self.serial.readline().strip()
+        print 'output: ' + output
         if output != expected:
             raise DeviceSyncError(expected, output, command)
 

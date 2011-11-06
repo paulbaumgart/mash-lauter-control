@@ -70,6 +70,7 @@ while True:
         else:
             play_sound('interface/ding.wav')
 
+        sys.stdin.flush()
         raw_input('Paused. Press Enter to continue.')
         s.serial.write('K')
         had_error = False
